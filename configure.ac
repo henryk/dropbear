@@ -636,6 +636,22 @@ AC_ARG_WITH(lastlog,
 		fi
 	]
 )
+AC_ARG_ENABLE(deterministic_prng,
+	[  --disable-deterministic-prng            Disable ability to use deterministic PRNG [no]],
+	[
+		if test "x$enableval" = "no"; then
+			AC_DEFINE(DETERMINISTIC_PRNG,0,Enable use of deterministic PRNG)
+			AC_MSG_NOTICE(Enabling deterministic PRNG)
+		else
+			AC_DEFINE(DETERMINISTIC_PRNG,1,Enable use of deterministic PRNG)
+			AC_MSG_NOTICE(Not enabling deterministic PRNG)
+		fi
+	],
+	[
+		AC_DEFINE(DETERMINISTIC_PRNG,1,Enable use of deterministic PRNG)
+		AC_MSG_NOTICE(Enabling deterministic PRNG)
+	]
+)
 
 if test -z "$no_loginfunc_check"; then
 	dnl    Checks for libutil functions (login(), logout() etc, not openpty() )

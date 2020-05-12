@@ -49,6 +49,18 @@ static int donerandinit = 0;
  *
  */
 
+#if (!defined(DETERMINISTIC_PRNG) || DETERMINISTIC_PRNG)
+/* Deterministic PRNG works by using the environment variable
+ *  DROPBEAR_DETERMINISTIC_PRNG_SEED
+ * as seed, if set, together with a seed counter for each reseed.
+ *
+ * No other entropy is added to the pool.
+ *
+ */
+static unsigned int deterministic_prng_seed_counter = 0;
+const char * const DETERMINISTIC_PRNG_MARKER = "Dropbear deterministic PRNG from env";
+#endif
+
 /* Pass wantlen=0 to hash an entire file */
 static int
 process_file(hash_state *hs, const char *filename,
@@ -163,7 +175,7 @@ void fuzz_seed(const unsigned char* dat, unsigned int len) {
 
 
 #ifdef HAVE_GETRANDOM
-/* Reads entropy seed with getrandom(). 
+/* Reads entropy seed with getrandom().
  * May block if the kernel isn't ready.
  * Return DROPBEAR_SUCCESS or DROPBEAR_FAILURE */
 static int process_getrandom(hash_state *hs) {
@@ -228,6 +240,10 @@ void seedrandom() {
 	struct timeval tv;
 	clock_t clockval;
 	int urandom_seeded = 0;
+#if (!defined(DETERMINISTIC_PRNG) || DETERMINISTIC_PRNG)
+	char *deterministic_prng_seed;
+
+#endif
 
 #if DROPBEAR_FUZZ
 	if (fuzz.fuzzing) {
@@ -241,6 +257,17 @@ void seedrandom() {
 	/* existing state */
 	sha1_process(&hs, (void*)hashpool, sizeof(hashpool));
 
+#if (!defined(DETERMINISTIC_PRNG) || DETERMINISTIC_PRNG)
+	deterministic_prng_seed = getenv("DROPBEAR_DETERMINISTIC_PRNG_SEED");
+	if(deterministic_prng_seed) {
+		sha1_process(&hs, (void*)DETERMINISTIC_PRNG_MARKER, sizeof(DETERMINISTIC_PRNG_MARKER));
+		sha1_process(&hs, (void*)deterministic_prng_seed, strlen(deterministic_prng_seed));
+		sha1_process(&hs, (void*)&deterministic_prng_seed_counter, sizeof(deterministic_prng_seed_counter));
+		deterministic_prng_seed_counter++;
+		goto deterministic_prng_end_seeding;
+	}
+#endif
+
 #ifdef HAVE_GETRANDOM
 	if (process_getrandom(&hs) == DROPBEAR_SUCCESS) {
 		urandom_seeded = 1;
@@ -249,17 +276,17 @@ void seedrandom() {
 
 	if (!urandom_seeded) {
 #if DROPBEAR_USE_PRNGD
-		if (process_file(&hs, DROPBEAR_PRNGD_SOCKET, INIT_SEED_SIZE, 1) 
+		if (process_file(&hs, DROPBEAR_PRNGD_SOCKET, INIT_SEED_SIZE, 1)
 				!= DROPBEAR_SUCCESS) {
-			dropbear_exit("Failure reading random device %s", 
+			dropbear_exit("Failure reading random device %s",
 					DROPBEAR_PRNGD_SOCKET);
 			urandom_seeded = 1;
 		}
 #else
 		/* non-blocking random source (probably /dev/urandom) */
-		if (process_file(&hs, DROPBEAR_URANDOM_DEV, INIT_SEED_SIZE, 0) 
+		if (process_file(&hs, DROPBEAR_URANDOM_DEV, INIT_SEED_SIZE, 0)
 				!= DROPBEAR_SUCCESS) {
-			dropbear_exit("Failure reading random device %s", 
+			dropbear_exit("Failure reading random device %s",
 					DROPBEAR_URANDOM_DEV);
 			urandom_seeded = 1;
 		}
@@ -302,6 +329,10 @@ void seedrandom() {
 
 	/* When a private key is read by the client or server it will
 	 * be added to the hashpool - see runopts.c */
+
+#if (!defined(DETERMINISTIC_PRNG) || DETERMINISTIC_PRNG)
+deterministic_prng_end_seeding:
+#endif
 
 	sha1_done(&hs, hashpool);
 
